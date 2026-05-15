@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, features
@@ -12,8 +13,16 @@ FONT_PATH = Path(__file__).parent / "fonts" / "LibertinusSerif-Regular.ttf"
 PANEL_W = 800
 PANEL_H = 480
 H_MARGIN = 20
+V_MARGIN = 20
 USABLE_W = PANEL_W - 2 * H_MARGIN
-USABLE_H = PANEL_H - 40
+
+# Decorative heart drawn just below the text. Sized to feel like a small
+# flourish, not a billboard.
+HEART_HALF_HEIGHT = 18
+HEART_GAP_ABOVE = 18  # gap between last text line and heart
+# Total vertical space the heart occupies (above+below center).
+HEART_BLOCK_H = HEART_HALF_HEIGHT * 2 + HEART_GAP_ABOVE
+USABLE_H = PANEL_H - 2 * V_MARGIN - HEART_BLOCK_H
 
 MAX_FONT_PT = 64
 MIN_FONT_PT = 20
@@ -80,6 +89,30 @@ def _fit_font(text: str) -> tuple[ImageFont.FreeTypeFont, list[str]]:
     return font, lines
 
 
+def _draw_heart(draw: ImageDraw.ImageDraw, cx: int, cy: int,
+                size: float = 1.6) -> None:
+    """Draw a filled black heart using the classic parametric cardioid curve.
+
+    The shape is x = 16·sin³(t), y = 13·cos(t) − 5·cos(2t) − 2·cos(3t) − cos(4t),
+    sampled around a full circle and rendered as a filled polygon. This is the
+    canonical "math heart" used widely in print/web — clean, symmetric, with
+    proper bumps and a pointed tip.
+
+    `size` is a multiplier on the raw curve units (one unit ≈ one pixel of the
+    raw 32-px-wide heart). A size of 1.6 gives roughly a 50×46 pixel heart.
+    """
+    pts = []
+    n = 100
+    for i in range(n):
+        t = (i / n) * 2 * math.pi
+        x = 16 * math.sin(t) ** 3
+        # Negate y so the heart points downward in image coordinates.
+        y = -(13 * math.cos(t) - 5 * math.cos(2 * t)
+              - 2 * math.cos(3 * t) - math.cos(4 * t))
+        pts.append((cx + x * size, cy + y * size))
+    draw.polygon(pts, fill=0)
+
+
 def render_sentence(text: str) -> bytes:
     """Render a Hebrew sentence to a 1-bit 800x480 PNG. Returns PNG bytes."""
     img = Image.new("1", (PANEL_W, PANEL_H), 1)
@@ -87,15 +120,24 @@ def render_sentence(text: str) -> bytes:
 
     font, lines = _fit_font(text)
     line_h = int(font.size * LINE_HEIGHT_FACTOR)
-    block_h = line_h * len(lines)
-    y = (PANEL_H - block_h) // 2
+    text_h = line_h * len(lines)
 
+    # Vertically center the (text + gap + heart) composition together, so the
+    # heart sits immediately under the last line of text regardless of how
+    # many lines the sentence wraps to.
+    composition_h = text_h + HEART_BLOCK_H
+    top = (PANEL_H - composition_h) // 2
+
+    y = top
     for line in lines:
         visual = _to_visual(line)
         line_w = font.getlength(visual)
         x = (PANEL_W - line_w) // 2
         draw.text((x, y), visual, font=font, fill=0)
         y += line_h
+
+    heart_cy = y + HEART_GAP_ABOVE + HEART_HALF_HEIGHT
+    _draw_heart(draw, cx=PANEL_W // 2, cy=heart_cy)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
