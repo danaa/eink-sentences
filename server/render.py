@@ -24,8 +24,9 @@ LINE_HEIGHT_FACTOR = 1.25
 # dot, etc.) at the correct positions. Linux Pillow wheels bundle libraqm;
 # Windows wheels don't — when unavailable, Pillow silently falls back to
 # basic layout (still correct letters, but nikud placement may be off).
+_RAQM_AVAILABLE = features.check("raqm")
 _LAYOUT_ENGINE = (
-    ImageFont.Layout.RAQM if features.check("raqm") else ImageFont.Layout.BASIC
+    ImageFont.Layout.RAQM if _RAQM_AVAILABLE else ImageFont.Layout.BASIC
 )
 
 
@@ -33,6 +34,14 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(
         str(FONT_PATH), size=size, layout_engine=_LAYOUT_ENGINE
     )
+
+
+def _to_visual(text: str) -> str:
+    """RAQM does BiDi internally via HarfBuzz; only manually reorder when
+    falling back to the BASIC layout engine."""
+    if _RAQM_AVAILABLE:
+        return text
+    return get_display(text)
 
 
 def _wrap_logical(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
@@ -45,7 +54,7 @@ def _wrap_logical(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> li
     current: list[str] = []
     for word in words:
         candidate = " ".join(current + [word])
-        visual = get_display(candidate)
+        visual = _to_visual(candidate)
         w = font.getlength(visual)
         if w <= max_width or not current:
             current.append(word)
@@ -82,7 +91,7 @@ def render_sentence(text: str) -> bytes:
     y = (PANEL_H - block_h) // 2
 
     for line in lines:
-        visual = get_display(line)
+        visual = _to_visual(line)
         line_w = font.getlength(visual)
         x = (PANEL_W - line_w) // 2
         draw.text((x, y), visual, font=font, fill=0)
