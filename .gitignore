@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.coverage
+
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/
+firmware/src/secrets.h
+
+# OS
+.DS_Store
+Thumbs.db
