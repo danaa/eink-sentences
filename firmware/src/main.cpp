@@ -6,14 +6,17 @@
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
+#ifndef NO_DISPLAY
 // If your panel rev shows garbled output with GxEPD2_750_T7, swap the
 // include + class to GxEPD2_750_GDEY075T7 (newer SSD168x controllers).
 #include <GxEPD2_BW.h>
 #include <epd/GxEPD2_750_T7.h>
-
 #include <PNGdec.h>
+#endif
+
 #include "secrets.h"
 
+#ifndef NO_DISPLAY
 // Pinout — Seeed XIAO ePaper Driver Board (default).
 #define EPD_CS   3   // D1
 #define EPD_DC   5   // D3
@@ -22,6 +25,7 @@
 
 GxEPD2_BW<GxEPD2_750_T7, GxEPD2_750_T7::HEIGHT> display(
     GxEPD2_750_T7(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
+#endif
 
 static const uint64_t SLEEP_US        = 5ULL * 60ULL * 1000000ULL; // 5 min
 static const uint32_t WIFI_TIMEOUT_MS = 15000;
@@ -29,6 +33,8 @@ static const size_t   PNG_BUF_SIZE    = 64 * 1024;
 
 static uint8_t pngBuffer[PNG_BUF_SIZE];
 static size_t  pngBufferLen = 0;
+
+#ifndef NO_DISPLAY
 static PNG     png;
 
 int pngDraw(PNGDRAW *pDraw) {
@@ -41,6 +47,7 @@ int pngDraw(PNGDRAW *pDraw) {
   }
   return 1;
 }
+#endif
 
 void deepSleep() {
   // Diagnostic window: stay alive for 10s so we can capture serial output
@@ -116,6 +123,7 @@ bool fetchPng() {
   return pngBufferLen > 0;
 }
 
+#ifndef NO_DISPLAY
 bool decodeAndDraw() {
   Serial.println("Init display");
   display.init(115200, true, 2, false);
@@ -136,6 +144,7 @@ bool decodeAndDraw() {
   display.hibernate();
   return rc == PNG_SUCCESS;
 }
+#endif
 
 void setup() {
   // Disable brownout detector — prevents reset loops on partial battery
@@ -153,12 +162,15 @@ void setup() {
   if (!fetchPng()) {
     deepSleep();
   }
+#ifndef NO_DISPLAY
   if (!decodeAndDraw()) {
     Serial.println("Decode/draw failed");
     deepSleep();
   }
-
   Serial.println("Display refreshed");
+#else
+  Serial.println("NO_DISPLAY build — network test complete (PNG fetched OK)");
+#endif
   deepSleep();
 }
 
