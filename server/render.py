@@ -8,7 +8,11 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, features
 from bidi.algorithm import get_display
 
-FONT_PATH = Path(__file__).parent / "fonts" / "LibertinusSerif-Regular.ttf"
+FONT_PATH = Path(__file__).parent / "fonts" / "FrankRuhlLibre-VF.ttf"
+# Frank Ruhl Libre is a variable font with a single Weight axis (300-900).
+# 500 (Medium) reads well on monochrome e-ink: thicker than Regular for
+# contrast, lighter than Bold so the nikud stays legible.
+FONT_WEIGHT = 500
 
 PANEL_W = 800
 PANEL_H = 480
@@ -40,9 +44,16 @@ _LAYOUT_ENGINE = (
 
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(
+    font = ImageFont.truetype(
         str(FONT_PATH), size=size, layout_engine=_LAYOUT_ENGINE
     )
+    try:
+        font.set_variation_by_axes([FONT_WEIGHT])
+    except Exception:
+        # Static-font fallback: ignore if axes can't be set (e.g. local test
+        # systems running an older Pillow).
+        pass
+    return font
 
 
 def _to_visual(text: str) -> str:
