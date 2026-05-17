@@ -125,17 +125,22 @@ def _draw_heart(draw: ImageDraw.ImageDraw, cx: int, cy: int,
 
 
 def render_sentence(text: str) -> bytes:
-    """Render a Hebrew sentence to a 1-bit 800x480 PNG. Returns PNG bytes."""
-    img = Image.new("1", (PANEL_W, PANEL_H), 1)
+    """Render a Hebrew sentence to a 1-bit 800x480 PNG. Returns PNG bytes.
+
+    Renders text + heart in 8-bit grayscale so PIL applies proper subpixel
+    antialiasing along curves, then converts to 1-bit using Floyd-Steinberg
+    error-diffusion dithering. The dither pattern softens edges that would
+    otherwise look stair-stepped, while keeping the output as 1-bit (so the
+    firmware's PNG-to-framebuffer path is unchanged).
+    """
+    # 8-bit grayscale canvas, 255 = white.
+    img = Image.new("L", (PANEL_W, PANEL_H), 255)
     draw = ImageDraw.Draw(img)
 
     font, lines = _fit_font(text)
     line_h = int(font.size * LINE_HEIGHT_FACTOR)
     text_h = line_h * len(lines)
 
-    # Vertically center the (text + gap + heart) composition together, so the
-    # heart sits immediately under the last line of text regardless of how
-    # many lines the sentence wraps to.
     composition_h = text_h + HEART_BLOCK_H
     top = (PANEL_H - composition_h) // 2
 
@@ -150,6 +155,9 @@ def render_sentence(text: str) -> bytes:
     heart_cy = y + HEART_GAP_ABOVE + HEART_HALF_HEIGHT
     _draw_heart(draw, cx=PANEL_W // 2, cy=heart_cy)
 
+    # Convert to 1-bit with Floyd-Steinberg dithering.
+    img_1bit = img.convert("1", dither=Image.Dither.FLOYDSTEINBERG)
+
     buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
+    img_1bit.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
