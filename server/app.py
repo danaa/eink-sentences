@@ -95,7 +95,14 @@ def create_app() -> Flask:
                     png = render_weather(format_weather_text(w),
                                          w["icon_kind"])
                 else:
-                    png = render_sentence(choice)
+                    # Checklist prompts get the current time above the question
+                    # so it doubles as a time display. Regular inspirational
+                    # sentences (outside both windows) render as-is.
+                    if _is_morning_window(now) or _is_evening_window(now):
+                        text = f"{now.strftime('%H:%M')}\n{choice}"
+                    else:
+                        text = choice
+                    png = render_sentence(text)
         except Exception as e:
             log.exception("Render failed: %s", e)
             png = render_sentence(FALLBACK_ERROR)

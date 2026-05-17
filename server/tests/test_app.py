@@ -49,6 +49,58 @@ def test_image_endpoint_uses_morning_pool_in_window():
     evening_mock.assert_not_called()
 
 
+def test_morning_task_renders_with_time_prepended():
+    """Checklist items in the morning window get the current time as the
+    first line so the panel doubles as a clock."""
+    app = create_app()
+    client = app.test_client()
+    with patch("server.app.fetch_morning_sentences",
+               return_value=["ציחצחתי שיניים?"]), \
+         patch("server.app.fetch_weather", return_value=None), \
+         patch("server.app.render_sentence",
+               return_value=b"\x89PNG\r\n\x1a\nfake") as render_mock, \
+         patch("server.app._is_morning_window", return_value=True), \
+         patch("server.app._is_evening_window", return_value=False):
+        client.get("/image.png")
+    arg = render_mock.call_args[0][0]
+    lines = arg.split("\n")
+    assert len(lines) == 2
+    # First line: HH:MM
+    assert ":" in lines[0] and len(lines[0]) == 5
+    assert lines[1] == "ציחצחתי שיניים?"
+
+
+def test_evening_task_renders_with_time_prepended():
+    app = create_app()
+    client = app.test_client()
+    with patch("server.app.fetch_evening_sentences",
+               return_value=["אכלתי ארוחת ערב?"]), \
+         patch("server.app.render_sentence",
+               return_value=b"\x89PNG\r\n\x1a\nfake") as render_mock, \
+         patch("server.app._is_morning_window", return_value=False), \
+         patch("server.app._is_evening_window", return_value=True):
+        client.get("/image.png")
+    arg = render_mock.call_args[0][0]
+    lines = arg.split("\n")
+    assert len(lines) == 2
+    assert ":" in lines[0] and len(lines[0]) == 5
+    assert lines[1] == "אכלתי ארוחת ערב?"
+
+
+def test_regular_sentence_has_no_time_prepended():
+    """Outside the morning/evening windows, sentences render as-is — no time."""
+    app = create_app()
+    client = app.test_client()
+    with patch("server.app.fetch_sentences", return_value=["שלום עולם"]), \
+         patch("server.app.render_sentence",
+               return_value=b"\x89PNG\r\n\x1a\nfake") as render_mock, \
+         patch("server.app._is_morning_window", return_value=False), \
+         patch("server.app._is_evening_window", return_value=False):
+        client.get("/image.png")
+    arg = render_mock.call_args[0][0]
+    assert arg == "שלום עולם"  # exact match, no extra lines
+
+
 def test_image_endpoint_includes_weather_card_in_morning_pool():
     """When weather fetch succeeds, the card is mixed into the morning pool."""
     app = create_app()
