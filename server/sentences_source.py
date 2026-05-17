@@ -23,6 +23,7 @@ HTTP_TIMEOUT_SECONDS = 10
 # existing tests that touch the module's internal state keep working.
 _cache: dict = {"sentences": [], "expires_at": 0.0}
 _morning_cache: dict = {"sentences": [], "expires_at": 0.0}
+_evening_cache: dict = {"sentences": [], "expires_at": 0.0}
 
 
 def _fetch_to_cache(url: str | None, cache: dict) -> list[str]:
@@ -51,18 +52,30 @@ def fetch_sentences() -> list[str]:
     return _fetch_to_cache(os.environ.get("SENTENCES_URL"), _cache)
 
 
-def _morning_url() -> str:
-    """Derive the morning.md URL by swapping the filename in SENTENCES_URL.
+def _sibling_url(filename: str) -> str:
+    """Derive a sibling-file URL by swapping the basename in SENTENCES_URL.
 
     Avoids requiring a second env var on Render. If SENTENCES_URL points at
-    `…/sentences.md`, the morning list is fetched from `…/morning.md`
+    `…/sentences.md`, the requested file is fetched from `…/<filename>`
     alongside it.
     """
     s = os.environ.get("SENTENCES_URL", "")
     if s.endswith("sentences.md"):
-        return s[: -len("sentences.md")] + "morning.md"
+        return s[: -len("sentences.md")] + filename
     return ""
+
+
+def _morning_url() -> str:
+    return _sibling_url("morning.md")
+
+
+def _evening_url() -> str:
+    return _sibling_url("evening.md")
 
 
 def fetch_morning_sentences() -> list[str]:
     return _fetch_to_cache(_morning_url(), _morning_cache)
+
+
+def fetch_evening_sentences() -> list[str]:
+    return _fetch_to_cache(_evening_url(), _evening_cache)
