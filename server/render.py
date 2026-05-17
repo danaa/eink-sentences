@@ -8,6 +8,8 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, features
 from bidi.algorithm import get_display
 
+from server.icons import draw_weather_icon
+
 FONT_PATH = Path(__file__).parent / "fonts" / "FrankRuhlLibre-VF.ttf"
 # Frank Ruhl Libre is a variable font with a single Weight axis (300-900).
 # 500 (Medium) reads well on monochrome e-ink: thicker than Regular for
@@ -27,6 +29,13 @@ HEART_GAP_ABOVE = 18  # gap between last text line and heart
 # Total vertical space the heart occupies (above+below center).
 HEART_BLOCK_H = HEART_HALF_HEIGHT * 2 + HEART_GAP_ABOVE
 USABLE_H = PANEL_H - 2 * V_MARGIN - HEART_BLOCK_H
+
+# Weather icon sits where the heart would; bigger so it reads as the focal
+# point of a forecast card.
+WEATHER_ICON_SIZE = 130
+WEATHER_ICON_GAP_ABOVE = 30
+WEATHER_BLOCK_H = WEATHER_ICON_SIZE + WEATHER_ICON_GAP_ABOVE
+WEATHER_USABLE_H = PANEL_H - 2 * V_MARGIN - WEATHER_BLOCK_H
 
 MAX_FONT_PT = 84
 MIN_FONT_PT = 26
@@ -66,24 +75,33 @@ def _to_visual(text: str) -> str:
 
 def _wrap_logical(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
     """Greedy word-wrap of logical-order Hebrew text. Returns logical-order lines.
-    Widths are measured on the visual form (post-BiDi)."""
-    words = text.split()
-    if not words:
-        return []
-    lines: list[str] = []
-    current: list[str] = []
-    for word in words:
-        candidate = " ".join(current + [word])
-        visual = _to_visual(candidate)
-        w = font.getlength(visual)
-        if w <= max_width or not current:
-            current.append(word)
-        else:
-            lines.append(" ".join(current))
-            current = [word]
-    if current:
-        lines.append(" ".join(current))
-    return lines
+
+    Honors explicit `\\n` line breaks (each paragraph word-wraps independently)
+    so callers can produce multi-line cards (e.g. the weather forecast) without
+    relying on the wrapper guessing where to break.
+
+    Widths are measured on the visual form (post-BiDi).
+    """
+    all_lines: list[str] = []
+    for paragraph in text.split("\n"):
+        words = paragraph.split()
+        if not words:
+            # Blank line in input → blank line in output (vertical spacer).
+            all_lines.append("")
+            continue
+        current: list[str] = []
+        for word in words:
+            candidate = " ".join(current + [word])
+            visual = _to_visual(candidate)
+            w = font.getlength(visual)
+            if w <= max_width or not current:
+                current.append(word)
+            else:
+                all_lines.append(" ".join(current))
+                current = [word]
+        if current:
+            all_lines.append(" ".join(current))
+    return all_lines
 
 
 def _fit_font(text: str) -> tuple[ImageFont.FreeTypeFont, list[str]]:
@@ -124,6 +142,29 @@ def _draw_heart(draw: ImageDraw.ImageDraw, cx: int, cy: int,
     draw.polygon(pts, fill=0)
 
 
+def _draw_text_block(img: Image.Image, text: str, top: int) -> int:
+    """Render `text` (possibly multi-line) centered horizontally starting at
+    `top`. Returns the y-coordinate just below the last drawn line."""
+    draw = ImageDraw.Draw(img)
+    font, lines = _fit_font(text)
+    line_h = int(font.size * LINE_HEIGHT_FACTOR)
+    y = top
+    for line in lines:
+        visual = _to_visual(line)
+        line_w = font.getlength(visual)
+        x = (PANEL_W - line_w) // 2
+        draw.text((x, y), visual, font=font, fill=0)
+        y += line_h
+    return y
+
+
+def _dither_to_1bit(img: Image.Image) -> bytes:
+    img_1bit = img.convert("1", dither=Image.Dither.FLOYDSTEINBERG)
+    buf = io.BytesIO()
+    img_1bit.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
 def render_sentence(text: str) -> bytes:
     """Render a Hebrew sentence to a 1-bit 800x480 PNG. Returns PNG bytes.
 
@@ -133,31 +174,45 @@ def render_sentence(text: str) -> bytes:
     otherwise look stair-stepped, while keeping the output as 1-bit (so the
     firmware's PNG-to-framebuffer path is unchanged).
     """
-    # 8-bit grayscale canvas, 255 = white.
     img = Image.new("L", (PANEL_W, PANEL_H), 255)
     draw = ImageDraw.Draw(img)
 
+    # Measure text block to vertically center (text + gap + heart).
     font, lines = _fit_font(text)
     line_h = int(font.size * LINE_HEIGHT_FACTOR)
     text_h = line_h * len(lines)
-
     composition_h = text_h + HEART_BLOCK_H
     top = (PANEL_H - composition_h) // 2
 
-    y = top
-    for line in lines:
-        visual = _to_visual(line)
-        line_w = font.getlength(visual)
-        x = (PANEL_W - line_w) // 2
-        draw.text((x, y), visual, font=font, fill=0)
-        y += line_h
+    y = _draw_text_block(img, text, top)
 
     heart_cy = y + HEART_GAP_ABOVE + HEART_HALF_HEIGHT
     _draw_heart(draw, cx=PANEL_W // 2, cy=heart_cy)
 
-    # Convert to 1-bit with Floyd-Steinberg dithering.
-    img_1bit = img.convert("1", dither=Image.Dither.FLOYDSTEINBERG)
+    return _dither_to_1bit(img)
 
-    buf = io.BytesIO()
-    img_1bit.save(buf, format="PNG", optimize=True)
-    return buf.getvalue()
+
+def render_weather(text: str, icon_kind: str) -> bytes:
+    """Render a weather card: 2 lines of text + a large weather icon below.
+
+    Same pipeline as `render_sentence` (8-bit antialiased → Floyd-Steinberg
+    dithered to 1-bit) but the heart is replaced by a `WEATHER_ICON_SIZE`-wide
+    icon depicting today's conditions.
+    """
+    img = Image.new("L", (PANEL_W, PANEL_H), 255)
+    draw = ImageDraw.Draw(img)
+
+    # Vertically center the (text + gap + icon) composition.
+    font, lines = _fit_font(text)
+    line_h = int(font.size * LINE_HEIGHT_FACTOR)
+    text_h = line_h * len(lines)
+    composition_h = text_h + WEATHER_BLOCK_H
+    top = (PANEL_H - composition_h) // 2
+
+    y = _draw_text_block(img, text, top)
+
+    icon_cy = y + WEATHER_ICON_GAP_ABOVE + WEATHER_ICON_SIZE // 2
+    draw_weather_icon(draw, icon_kind, cx=PANEL_W // 2, cy=icon_cy,
+                      size=WEATHER_ICON_SIZE)
+
+    return _dither_to_1bit(img)
