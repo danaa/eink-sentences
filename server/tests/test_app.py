@@ -62,10 +62,12 @@ def test_morning_window_boundaries():
     assert _is_morning_window(datetime(2026, 5, 17, 6, 30, tzinfo=IL)) is True
     # 7:00 -> morning
     assert _is_morning_window(datetime(2026, 5, 17, 7, 0, tzinfo=IL)) is True
-    # 7:29 -> morning
-    assert _is_morning_window(datetime(2026, 5, 17, 7, 29, tzinfo=IL)) is True
-    # 7:30 -> not morning (exclusive end)
-    assert _is_morning_window(datetime(2026, 5, 17, 7, 30, tzinfo=IL)) is False
+    # 7:30 -> still morning (end is 08:00)
+    assert _is_morning_window(datetime(2026, 5, 17, 7, 30, tzinfo=IL)) is True
+    # 7:59 -> morning
+    assert _is_morning_window(datetime(2026, 5, 17, 7, 59, tzinfo=IL)) is True
+    # 8:00 -> not morning (exclusive end)
+    assert _is_morning_window(datetime(2026, 5, 17, 8, 0, tzinfo=IL)) is False
     # 12:00 -> not morning
     assert _is_morning_window(datetime(2026, 5, 17, 12, 0, tzinfo=IL)) is False
     # 2:00 AM -> not morning (per "from 6:30")

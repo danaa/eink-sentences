@@ -19,7 +19,7 @@ FALLBACK_ERROR = "שגיאה"
 
 ISRAEL_TZ = ZoneInfo("Asia/Jerusalem")
 MORNING_START_MIN = 6 * 60 + 30  # 06:30
-MORNING_END_MIN = 7 * 60 + 30    # 07:30
+MORNING_END_MIN = 8 * 60          # 08:00
 
 
 def _now_israel() -> datetime:
